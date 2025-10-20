@@ -5,58 +5,21 @@ import numpy as np
 from numpy.typing import NDArray
 from benchmark.utils.logger import Logger
 
+
 logger = Logger()
 
 
-def preprocess(images: list[NDArray]) -> list[NDArray]:
+def normalize_using_cupy(images: list[NDArray], return_gpu_arrays: bool = False):
     """
-    Preprocess the image for the model.
-    """
-    processed_images = []
-    for image in images:
-        resized_image = cv2.resize(
-            image,
-            (640, 360),
-            interpolation=cv2.INTER_LINEAR,
-        )
-
-        # Format: ((before_axis0, after_axis0), (before_axis1, after_axis1), ...)
-        padding = ((0, 280), (0, 0), (0, 0))
-        padded_image = np.pad(
-            resized_image,
-            padding,
-            mode="constant",
-            constant_values=114.0,
-        )
-        processed_images.append(padded_image)
-
-    #normalized_images_gpu_no_download = normalize_in_batch(processed_images, gpu=True, return_gpu_arrays=True)
-    normalized_images_gpu = normalize_in_batch(processed_images, gpu=True)
-    #normalized_images_cpu = normalize_in_batch(processed_images, gpu=False)
-    
-    return normalized_images_gpu
-
-
-def normalize_in_batch(images: list[NDArray], gpu: bool = False, return_gpu_arrays: bool = False):
-    if gpu:
-        return normalize_batch_gpu(images, return_gpu_arrays)
-    else:
-        return normalize_batch_cpu(images)
-
-
-def normalize_batch_gpu(images: list[NDArray], return_gpu_arrays: bool = False):
-    """
-    Batch GPU normalization for multiple images.
+    GPU normalization using CuPy.
 
     Args:
         images: Images to normalize.
-        return_gpu_arrays: If True, keep on GPU array. If False, download to CPU.
+        return_gpu_arrays: If True, keep end result on GPU array. If False, download to CPU memory.
 
     Returns:
         GPU or CPU array depending on return_gpu_arrays.
     """
-    batch_start = time.perf_counter()
-
     # Stack all images into single batch (N, H, W, C)
     images_batch = np.stack(images)
     images_batch_gpu = cp.asarray(images_batch)
@@ -77,11 +40,7 @@ def normalize_batch_gpu(images: list[NDArray], return_gpu_arrays: bool = False):
             cp.expand_dims(transposed_batch_gpu[i], axis=0)  # (1, 3, 640, 640) per camera
             for i in range(len(images))
         ]
-        total_time = time.perf_counter() - batch_start
-        logger.info(
-            f"GPU Batch Normalize + GPU Array [{len(images)} images] | "
-            f"Total: {total_time * 1000:.2f}ms"
-        )
+
         return results_gpu
     else:
         # Download to CPU.
@@ -92,22 +51,12 @@ def normalize_batch_gpu(images: list[NDArray], return_gpu_arrays: bool = False):
             for i in range(len(images))
         ]
 
-        #results_cpu = []
-        #for result in results_gpu:
-        #    results_cpu.append(cp.asnumpy(result))
-        
-        total_time = time.perf_counter() - batch_start
-        logger.info(
-            f"GPU Batch Normalize + Download to CPU [{len(images)} images] | "
-            f"Total: {total_time * 1000:.2f}ms | "
-        )
-
         return results
 
 
-def normalize_batch_cpu(images: list):
+def normalize_using_numpy(images: list):
     """
-    CPU batch normalization.
+    CPU normalization using numpy.
 
     Args:
         images: Images to normalize.
@@ -115,8 +64,6 @@ def normalize_batch_cpu(images: list):
     Returns:
         Normalized CPU arrays.
     """
-    batch_start = time.perf_counter()
-    
     images_batch = np.stack(images)
     mean = np.array([123.675, 116.28, 103.53], dtype=np.float16)
     std = np.array([58.395, 57.12, 57.375], dtype=np.float16)
@@ -132,30 +79,51 @@ def normalize_batch_cpu(images: list):
         np.expand_dims(transposed_batch[i], axis=0)  # (1, 3, 640, 640) per image
         for i in range(len(images))
     ]
-    total_time = time.perf_counter() - batch_start
-    logger.info(
-        f"CPU Batch Normalize [{len(images)} images] | " f"Total: {total_time * 1000:.2f}ms"
-    )
-
+    
     return results
 
 
 if __name__ == "__main__":
+    # Let's assume our inference model takes 640-by-640 images.
+    dummy_images = []
+    for _ in range(6):
+        dummy_images.append(np.random.randint(0, 256, size=(640, 640, 3), dtype=np.uint8))
+    
     # Note: First GPU operation initializes the CUDA context and CuPy compiles CUDA kernels on first use.
     # Due to that, I am running a warm-up iteration before the actual benchmark.
-
-    # Warm-up run to initialize CUDA context and compile kernels.
-    dummy_image = np.random.randint(0, 256, size=(720, 1280, 3), dtype=np.uint8)
-    preprocess([dummy_image * 2])
+    logger.info("Warming CUDA...")
+    normalize_using_cupy(dummy_images)
     logger.info("Warm-up complete. Starting actual benchmark...")
-
-    all_time = 0
+    
+    # CPU Operation.
+    batch_start = time.perf_counter()
     for _ in range(20):
-        dummy_images = []
-        for _ in range(6):
-            dummy_images.append(np.random.randint(0, 256, size=(720, 1280, 3), dtype=np.uint8))
-        start_time = time.perf_counter()
-        preprocess(dummy_images)
-        all_time += time.perf_counter() - start_time
-    logger.info(f"Time spent: {all_time // 20 * 1000:.2f}ms")
+        normalize_using_numpy(dummy_images)
+    
+    total_time = time.perf_counter() - batch_start
+    logger.info(
+        f"CPU Normalize | " f"Takes {total_time / 20 * 1000:.2f}ms"
+    )
+    
+    # GPU operation
+    # Download the end result to CPU.
+    batch_start = time.perf_counter()
+    for _ in range(20):
+        normalize_using_cupy(dummy_images, return_gpu_arrays=False)
+    
+    total_time = time.perf_counter() - batch_start
+    logger.info(
+        f"GPU Normalize + Result in CPU memory | "
+        f"Takes {total_time / 20 * 1000:.2f}ms | "
+    )
+    
+    # Keep the end result in GPU.
+    batch_start = time.perf_counter()
+    for _ in range(20):
+        normalize_using_cupy(dummy_images, return_gpu_arrays=True)
+        total_time = time.perf_counter() - batch_start
+    logger.info(
+        f"GPU Normalize + Result in GPU Array | "
+        f"Takes {total_time / 20 * 1000:.2f}ms"
+    )
 
