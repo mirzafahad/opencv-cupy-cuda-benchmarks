@@ -21,10 +21,10 @@ logger = Logger()
 MEAN = [123.675, 116.28, 103.53]  # RGB channel means
 STD = [58.395, 57.12, 57.375]  # RGB channel standard deviations
 # Pre-computed arrays for performance (avoid recreating on each function call)
-MEAN_GPU = cp.array(MEAN, dtype=cp.float32)
-STD_GPU = cp.array(STD, dtype=cp.float32)
-MEAN_CPU = np.array(MEAN, dtype=np.float32)
-STD_CPU = np.array(STD, dtype=np.float32)
+MEAN_GPU = cp.array(MEAN, dtype=cp.float16)
+STD_GPU = cp.array(STD, dtype=cp.float16)
+MEAN_CPU = np.array(MEAN, dtype=np.float16)
+STD_CPU = np.array(STD, dtype=np.float16)
 
 
 def normalize_using_cupy(
@@ -150,7 +150,7 @@ if __name__ == "__main__":
     for _ in range(NUM_IMAGES):
         dummy_images.append(np.random.randint(0, 256, size=IMAGE_SIZE, dtype=np.uint8))
 
-    logger.info(f"GPU Device: {cp.cuda.Device().name}")
+    logger.info(f"GPU Device: {cp.cuda.Device()}")
     logger.info(f"CUDA Version: {cp.cuda.runtime.runtimeGetVersion()}")
 
     # Warm-up: First GPU operation initializes CUDA context and compiles kernels.
@@ -160,7 +160,7 @@ if __name__ == "__main__":
     for _ in range(3):
         normalize_using_cupy(dummy_images)
     cp.cuda.Stream.null.synchronize()  # Ensure warm-up completes
-    logger.info("Warm-up complete. Starting actual benchmark...")
+    logger.info("Warm-up complete. Starting benchmark...")
 
     # Uncomment the following line if you need to validate GPU and CPU results.
     # validate_cpu_and_gpu_results(dummy_images)
