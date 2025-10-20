@@ -109,8 +109,8 @@ def run_profiling(image_file: str, video_file: str):
 
 
 if __name__ == "__main__":
-    image_file = "./background.jpg"
-    video_file = "./demo_video.mp4"
+    image_file_path = "./background.jpg"
+    video_file_path = "./demo_video.mp4"
 
-    run_profiling(image_file, video_file)
+    run_profiling(image_file_path, video_file_path)
 
