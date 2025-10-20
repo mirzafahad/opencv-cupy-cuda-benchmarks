@@ -14,7 +14,7 @@ class Handler(logging.Handler):
     """
 
     # Define information for each log here: https://docs.python.org/3/library/logging.html#logrecord-attributes
-    fmt = "| {module:.20}:{funcName:.20}:L{lineno:04d} | {message}"
+    fmt = "| {module:.20}:L{lineno:04d} | {message}"
 
     # Styles for each type of log, defined by Rich: https://rich.readthedocs.io/en/stable/style.html
     c = {
