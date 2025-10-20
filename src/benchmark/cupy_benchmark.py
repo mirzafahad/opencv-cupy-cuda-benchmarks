@@ -1,8 +1,9 @@
-from benchmark.utils.logger import Logger
-from numpy.typing import NDArray
+import time
 import cv2
-import numpuy as np
 import cupy as cp
+import numpy as np
+from numpy.typing import NDArray
+from benchmark.utils.logger import Logger
 
 logger = Logger()
 
@@ -30,11 +31,14 @@ def preprocess(image: NDArray) -> list[NDArray]:
         )
         processed_images.append(padded_image)
 
-    normalized_images = normalize_in_batch(processed_images)
-    return normalized_images
+    #normalized_images_gpu_no_download = normalize_in_batch(processed_images, gpu=True, return_gpu_arrays=True)
+    normalized_images_gpu = normalize_in_batch(processed_images, gpu=True)
+    #normalized_images_cpu = normalize_in_batch(processed_images, gpu=False)
+    
+    return normalized_images_gpu
 
 
-def normalize_in_batch(images: list[NDArray], gpu: bool = False):
+def normalize_in_batch(images: list[NDArray], gpu: bool = False, return_gpu_arrays: bool = False):
     if gpu:
         return normalize_batch_gpu(images, return_gpu_arrays)
     else:
@@ -70,7 +74,7 @@ def normalize_batch_gpu(images: list[NDArray], return_gpu_arrays: bool = False):
     if return_gpu_arrays:
         # Keep on GPU - no download overhead!
         # Extract each images and add batch dimension: (C, H, W) -> (1, C, H, W)
-        results = [
+        results_gpu = [
             cp.expand_dims(transposed_batch_gpu[i], axis=0)  # (1, 3, 640, 640) per camera
             for i in range(len(images))
         ]
@@ -79,20 +83,24 @@ def normalize_batch_gpu(images: list[NDArray], return_gpu_arrays: bool = False):
             f"GPU Batch Normalize + GPU Array [{len(images)} images] | "
             f"Total: {total_time * 1000:.2f}ms"
         )
-        return results
+        return results_gpu
     else:
         # Download to CPU.
         batch_cpu = cp.asnumpy(transposed_batch_gpu)
-
         # Extract each camera and add batch dimension: (C, H, W) -> (1, C, H, W)
         results = [
             np.expand_dims(batch_cpu[i], axis=0)  # (1, 3, 640, 640) per image
-            for i in range(num_cameras)
+            for i in range(len(images))
         ]
+
+        #results_cpu = []
+        #for result in results_gpu:
+        #    results_cpu.append(cp.asnumpy(result))
+        
         total_time = time.perf_counter() - batch_start
         logger.info(
-            f"GPU Batch Normalize + Download to CPU [{len(images)} cameras] | "
-            f"Total: {total_time * 1000:.2f}ms"
+            f"GPU Batch Normalize + Download to CPU [{len(images)} images] | "
+            f"Total: {total_time * 1000:.2f}ms | "
         )
 
         return results
@@ -109,7 +117,7 @@ def normalize_batch_cpu(images: list):
         Normalized CPU arrays.
     """
     batch_start = time.perf_counter()
-
+    
     images_batch = np.stack(images)
     mean = np.array([123.675, 116.28, 103.53], dtype=np.float16)
     std = np.array([58.395, 57.12, 57.375], dtype=np.float16)
@@ -127,7 +135,13 @@ def normalize_batch_cpu(images: list):
     ]
     total_time = time.perf_counter() - batch_start
     logger.info(
-        f"CPU Batch Normalize [{len(images)} cameras] | " f"Total: {total_time * 1000:.2f}ms"
+        f"CPU Batch Normalize [{len(images)} images] | " f"Total: {total_time * 1000:.2f}ms"
     )
 
     return results
+
+
+if __name__ == "__main__":
+    for _ in range(20):
+        dummy_image = np.random.randint(0, 256, size=(720, 1280, 3), dtype=np.uint8)
+        preprocess(dummy_image)
