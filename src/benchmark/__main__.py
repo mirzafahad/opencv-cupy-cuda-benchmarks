@@ -1,7 +1,7 @@
 import pyjokes
 
 
-def main():
+def main() -> None:
     print(pyjokes.get_joke())
 
 

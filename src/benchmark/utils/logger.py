@@ -3,8 +3,7 @@ import logging
 import logging.handlers
 import os
 from logging import CRITICAL, DEBUG, ERROR, INFO, WARNING, Formatter
-from typing import Any, Optional
-
+from typing import Any
 from rich.console import Console
 
 
@@ -35,7 +34,7 @@ class Handler(logging.Handler):
         CRITICAL: Formatter(fmt=f"[{c[CRITICAL]}]{fmt}", style="{"),
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         # Define a console for the logger that is used to pretty-print stuff. Soft-wrap to prevent breaks.
         self.console = Console(
@@ -43,16 +42,17 @@ class Handler(logging.Handler):
             soft_wrap=True,
         )
 
-    def emit(self, record):
-        # Emit the record (log) to the console; replace newline with a unicode character.
+    def emit(self, record) -> None:
+        # Emit the record (log) to the console; replace newline with a Unicode character.
         created_time = dt.datetime.fromtimestamp(record.created)
         timestamp = f"[{created_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}] "
         log_line = timestamp + self.format(record)
         self.console.print(log_line)
 
-    def format(self, record):
+    def format(self, record) -> str:
         # Apply the default formatting from logging module
         formatter = Handler.formatters.get(record.levelno)
+        assert formatter is not None
         formatted = formatter.format(record)
         return formatted
 
@@ -76,7 +76,6 @@ class Logger:
 
         return cls._logger
 
-
     @classmethod
     def set_logger_level(cls, level: int) -> None:
         """
@@ -86,9 +85,10 @@ class Logger:
             level: integer logging level (ie: DEBUG = 10, CRITICAL = 50)
 
         """
+        assert cls._logger is not None
         cls._logger.setLevel(level)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         """
         This is added so that pylint doesn't complain about
         "can't find attributes" because pylint doesn't know we
@@ -100,7 +100,7 @@ class Logger:
 if __name__ == "__main__":
     # Create a logger
     os.environ["ENABLE_DEBUG"] = "1"
-    logger = Logger()
+    log = Logger()
 
     # Different types of data
     short_string = "Buzz Buzz"
@@ -116,10 +116,9 @@ if __name__ == "__main__":
     # Even supports emojis! See the CLDR names here: https://unicode.org/emoji/charts/full-emoji-list.html
     emojis = ":hot_pepper: \u2705 :cross_mark:"
 
-    logger.debug(f"|{short_string:^20}|")
-    logger.info(long_string)
-    logger.warning(json_obj)
-    logger.warning(emojis)
-    logger.error(number)
-    logger.critical(sample_list)
-
+    log.debug(f"|{short_string:^20}|")
+    log.info(long_string)
+    log.warning(json_obj)
+    log.warning(emojis)
+    log.error(number)
+    log.critical(sample_list)
