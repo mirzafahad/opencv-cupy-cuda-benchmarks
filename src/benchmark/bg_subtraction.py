@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 logger = Logger()
 
 
-def run_profiling(image_file: str, video_file: str):
+def run_profiling(image_file: str, video_file: str, static_image_iteration: int):
     """
     Profiling CPU and GPU based background subtraction.
     """
@@ -28,8 +28,8 @@ def run_profiling(image_file: str, video_file: str):
 
     # Now run the subtractor using the same image for 100 iterations.
     start_time_cpu_image = time.perf_counter()
-    for _ in range(100):
-        foreground_mask: NDArray = bg_subtractor.apply(image, learningRate=0.1)
+    for _ in range(static_image_iteration):
+        bg_subtractor.apply(image, learningRate=0.1)
     
     time_cpu_image = time.perf_counter() - start_time_cpu_image
        
@@ -50,7 +50,7 @@ def run_profiling(image_file: str, video_file: str):
         if not ret:
             logger.debug("End of video.")
             break
-        foreground_mask: NDArray = bg_subtractor.apply(frame, learningRate=0.1)
+        bg_subtractor.apply(frame, learningRate=0.1)
     
     time_cpu_video = time.perf_counter() - start_time_cpu_video
     
@@ -69,13 +69,13 @@ def run_profiling(image_file: str, video_file: str):
     logger.info("Running GPU Background Subtraction...")
     start_time_gpu_image = time.perf_counter()
     # Now run the subtractor for 100 times.
-    for _ in range(100):
+    for _ in range(static_image_iteration):
         # Upload to GPU.
         gpu_frame.upload(image)
         # Get a mask from the subtraction.
         gpu_foreground_mask = bg_subtractor.apply(gpu_frame, learningRate=0.1, stream=stream)
         # Download the result from the GPU to CPU.
-        cpu_foreground_mask: NDArray = gpu_foreground_mask.download()
+        gpu_foreground_mask.download()
     time_gpu_image = time.perf_counter() - start_time_gpu_image
     
     
@@ -96,12 +96,12 @@ def run_profiling(image_file: str, video_file: str):
         # Get a mask from the subtraction
         gpu_foreground_mask = bg_subtractor.apply(gpu_frame, learningRate=0.1, stream=stream)
         # Download the result from the GPU to CPU.
-        cpu_foreground_mask: NDArray = gpu_foreground_mask.download()
+        gpu_foreground_mask.download()
     time_gpu_video = time.perf_counter() - start_time_gpu_video
     
 
-    logger.info(f"CPU: Static image for 100 iterations - {time_cpu_image}")
-    logger.info(f"GPU: Static image for 100 iterations - {time_gpu_image}")
+    logger.info(f"CPU: Static image for {static_image_iteration} iterations - {time_cpu_image}")
+    logger.info(f"GPU: Static image for {static_image_iteration} iterations - {time_gpu_image}")
     logger.info(f"OpenCV-CUDA was ~{math.ceil(time_cpu_image / time_gpu_image)} times faster i.e ~{math.ceil(((time_cpu_image - time_gpu_image) / time_cpu_image) * 100)}% reduction in time.")
     
     logger.info(f"CPU: Video - {time_cpu_video}")
@@ -113,5 +113,5 @@ if __name__ == "__main__":
     image_file_path = "./resource/background.jpg"
     video_file_path = "./resource/demo_video.mp4"
 
-    run_profiling(image_file_path, video_file_path)
+    run_profiling(image_file_path, video_file_path, static_image_iteration=150)
 
