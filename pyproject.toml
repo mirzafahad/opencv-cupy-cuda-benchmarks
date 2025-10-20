@@ -10,6 +10,7 @@ dependencies = [
     "cupy-cuda11x>=13.0.0",
     "numpy>=2.3.3",
     "pyjokes>=0.8.3",
+    "rich>=14.2.0",
 ]
 
 
