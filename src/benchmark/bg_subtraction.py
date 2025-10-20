@@ -1,4 +1,5 @@
 import time
+import math
 import cv2
 from benchmark.utils.logger import Logger
 from numpy.typing import NDArray
@@ -60,7 +61,7 @@ def run_profiling(image_file: str, video_file: str):
         bg_subtractor = cv2.cuda.createBackgroundSubtractorMOG()
         stream: Stream = cv2.cuda_Stream()
         gpu_frame: GpuMat = cv2.cuda_GpuMat()
-        logger.info(f"Using GPU OpenCV with {cv2.cuda.getCudaEnabledDeviceCount()} CUDA device(s)")
+        logger.debug(f"Using GPU OpenCV with {cv2.cuda.getCudaEnabledDeviceCount()} CUDA device(s)")
     else:
         logger.error("OpenCV-CUDA not available!")
         return
@@ -101,16 +102,16 @@ def run_profiling(image_file: str, video_file: str):
 
     logger.info(f"CPU: Static image for 100 iterations - {time_cpu_image}")
     logger.info(f"GPU: Static image for 100 iterations - {time_gpu_image}")
-    logger.info(f"OpenCV-CUDA was {int(time_cpu_image / time_gpu_image)} times faster. That is {int((time_cpu_image - time_gpu_image) / time_cpu_image) * 100}% reduction.")
+    logger.info(f"OpenCV-CUDA was ~{math.ceil(time_cpu_image / time_gpu_image)} times faster i.e ~{math.ceil(((time_cpu_image - time_gpu_image) / time_cpu_image) * 100)}% reduction in time.")
     
     logger.info(f"CPU: Video - {time_cpu_video}")
     logger.info(f"GPU: Video - {time_gpu_video}")
-    logger.info(f"OpenCV-CUDA was {int(time_cpu_video / time_gpu_video)} times faster. That is {int((time_cpu_video - time_gpu_video) / time_cpu_video) * 100}% reduction.")
+    logger.info(f"OpenCV-CUDA was ~{math.ceil(time_cpu_video / time_gpu_video)} times faster i.e. ~{math.ceil(((time_cpu_video - time_gpu_video) / time_cpu_video) * 100)}% reduction in time.")
 
 
 if __name__ == "__main__":
-    image_file_path = "./background.jpg"
-    video_file_path = "./demo_video.mp4"
+    image_file_path = "./resource/background.jpg"
+    video_file_path = "./resource/demo_video.mp4"
 
     run_profiling(image_file_path, video_file_path)
 
