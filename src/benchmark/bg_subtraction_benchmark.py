@@ -1,7 +1,9 @@
 import time
-import cv2
-from benchmark.utils.logger import Logger
 from typing import TYPE_CHECKING
+
+import cv2
+
+from benchmark.utils.logger import Logger
 
 if TYPE_CHECKING:
     from cv2.cuda import GpuMat, Stream
@@ -96,15 +98,15 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
         gpu_foreground_mask.download()
     time_gpu_video = time.perf_counter() - start_time_gpu_video
 
-    logger.info(f"CPU: Static image for {static_image_iteration} iterations - {time_cpu_image}")
-    logger.info(f"GPU: Static image for {static_image_iteration} iterations - {time_gpu_image}")
+    logger.debug(f"CPU: Static image for {static_image_iteration} iterations - {time_cpu_image}")
+    logger.debug(f"GPU: Static image for {static_image_iteration} iterations - {time_gpu_image}")
     logger.info(
         f"OpenCV-CUDA was ~{round(time_cpu_image / time_gpu_image)} times faster i.e "
         f"~{round(((time_cpu_image - time_gpu_image) / time_cpu_image) * 100)}% reduction in time."
     )
 
-    logger.info(f"CPU: Video - {time_cpu_video}")
-    logger.info(f"GPU: Video - {time_gpu_video}")
+    logger.debug(f"CPU: Video - {time_cpu_video}")
+    logger.debug(f"GPU: Video - {time_gpu_video}")
     logger.info(
         f"OpenCV-CUDA was ~{round(time_cpu_video / time_gpu_video)} times faster i.e. "
         f"~{round(((time_cpu_video - time_gpu_video) / time_cpu_video) * 100)}% reduction in time."
