@@ -5,7 +5,6 @@ Benchmarking NumPy vs CuPy.
 import time
 
 import cupy as cp
-import cv2
 import numpy as np
 from numpy.typing import NDArray
 
@@ -13,6 +12,11 @@ from benchmark.utils.logger import Logger
 
 
 logger = Logger()
+
+
+# Normalization parameters (ImageNet stats)
+MEAN = [123.675, 116.28, 103.53]
+STD = [58.395, 57.12, 57.375]
 
 
 def normalize_using_cupy(images: list[NDArray], return_gpu_arrays: bool = False):
@@ -31,8 +35,8 @@ def normalize_using_cupy(images: list[NDArray], return_gpu_arrays: bool = False)
     # Upload to GPU.
     images_batch_gpu = cp.asarray(images_batch)
 
-    mean_gpu = cp.array([123.675, 116.28, 103.53], dtype=cp.float16)
-    std_gpu = cp.array([58.395, 57.12, 57.375], dtype=cp.float16)
+    mean_gpu = cp.array(MEAN, dtype=cp.float16)
+    std_gpu = cp.array(STD, dtype=cp.float16)
 
     # Normalize all images in parallel.
     normalized_batch_gpu = (images_batch_gpu - mean_gpu) / std_gpu
@@ -74,8 +78,8 @@ def normalize_using_numpy(images: list):
     # Stack all images into single batch (N, H, W, C).
     images_batch = np.stack(images)
 
-    mean = np.array([123.675, 116.28, 103.53], dtype=np.float16)
-    std = np.array([58.395, 57.12, 57.375], dtype=np.float16)
+    mean = np.array(MEAN, dtype=np.float16)
+    std = np.array(STD, dtype=np.float16)
 
     # Normalize all images in parallel.
     normalized_batch = (images_batch - mean) / std
@@ -93,10 +97,15 @@ def normalize_using_numpy(images: list):
 
 
 if __name__ == "__main__":
-    # Let's assume our inference model takes 640-by-640 images.
+    # Benchmark configuration
+    NUM_IMAGES = 6
+    # Let's assume our inference model takes 640-by-640 RGB images.
+    IMAGE_SIZE = (640, 640, 3)
+    NUM_ITERATIONS = 20
+
     dummy_images = []
-    for _ in range(6):
-        dummy_images.append(np.random.randint(0, 256, size=(640, 640, 3), dtype=np.uint8))
+    for _ in range(NUM_IMAGES):
+        dummy_images.append(np.random.randint(0, 256, size=IMAGE_SIZE, dtype=np.uint8))
 
     # Note: First GPU operation initializes the CUDA context and CuPy compiles CUDA kernels on first use.
     # Due to that, I am running a warm-up iteration before the actual benchmark.
@@ -106,22 +115,24 @@ if __name__ == "__main__":
 
     # CPU Operation.
     batch_start = time.perf_counter()
-    for _ in range(20):
+    for _ in range(NUM_ITERATIONS):
         normalize_using_numpy(dummy_images)
     total_time = time.perf_counter() - batch_start
-    logger.info(f"CPU Normalize | Takes {total_time / 20 * 1000:.2f}ms")
+    logger.info(f"CPU Normalize | Takes {total_time / NUM_ITERATIONS * 1000:.2f}ms")
 
     # GPU operation
     # Download the end result to CPU.
     batch_start = time.perf_counter()
-    for _ in range(20):
+    for _ in range(NUM_ITERATIONS):
         normalize_using_cupy(dummy_images, return_gpu_arrays=False)
+    cp.cuda.Stream.null.synchronize()  # Wait for GPU operations to complete
     total_time = time.perf_counter() - batch_start
-    logger.info(f"GPU Normalize + Result in CPU memory | Takes {total_time / 20 * 1000:.2f}ms")
+    logger.info(f"GPU Normalize + Result in CPU memory | Takes {total_time / NUM_ITERATIONS * 1000:.2f}ms")
 
     # Keep the end result in GPU.
     batch_start = time.perf_counter()
-    for _ in range(20):
+    for _ in range(NUM_ITERATIONS):
         normalize_using_cupy(dummy_images, return_gpu_arrays=True)
-        total_time = time.perf_counter() - batch_start
-    logger.info(f"GPU Normalize + Result in GPU Array | Takes {total_time / 20 * 1000:.2f}ms")
+    cp.cuda.Stream.null.synchronize()  # Wait for GPU operations to complete
+    total_time = time.perf_counter() - batch_start
+    logger.info(f"GPU Normalize + Result in GPU Array | Takes {total_time / NUM_ITERATIONS * 1000:.2f}ms")
