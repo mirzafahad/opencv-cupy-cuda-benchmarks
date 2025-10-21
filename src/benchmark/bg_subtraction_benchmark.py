@@ -10,11 +10,13 @@ import time
 from typing import TYPE_CHECKING
 
 import cv2
+import numpy as np
 
 from benchmark.utils.logger import Logger
 
 if TYPE_CHECKING:
     from cv2.cuda import GpuMat, Stream
+    from numpy.typing import NDArray
 
 
 logger = Logger()
@@ -31,6 +33,11 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
     Benchmarks background subtraction performance using both CPU (OpenCV) and GPU (CUDA)
     implementations. Tests are performed on both a static image (repeated iterations) and
     a video file. Results are logged showing timing comparisons and speedup metrics.
+
+    Note: GPU timing includes data transfer overhead (upload to GPU and download from GPU).
+    This provides a realistic measurement of end-to-end performance for applications that
+    need to transfer results back to CPU memory. For pure algorithm comparison without I/O,
+    the transfer operations would need to be measured separately.
 
     Args:
         image_file: Path to the static image file for testing.
@@ -97,9 +104,9 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
     # Note: All operations use the same stream for asynchronous execution.
     for _ in range(static_image_iteration):
         gpu_frame.upload(image, stream=stream)
-        gpu_foreground_mask = bg_subtractor.apply(gpu_frame, learningRate=LEARNING_RATE, stream=stream)
+        gpu_foreground_mask: GpuMat = bg_subtractor.apply(gpu_frame, learningRate=LEARNING_RATE, stream=stream)
         # Download result to simulate real-world usage where CPU needs the output.
-        cpu_fg_mask = gpu_foreground_mask.download(stream=stream)
+        cpu_fg_mask: NDArray[np.uint8] = gpu_foreground_mask.download(stream=stream)
     # Synchronize stream to ensure all GPU operations complete before measuring time.
     # Without this, timing would only measure kernel launch overhead, not actual execution.
     stream.waitForCompletion()
@@ -111,7 +118,7 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
         return
 
     try:
-        # Create fresh background model for video test (prevents static image from affecting results).
+        # Create a fresh background model for video test (prevents static image from affecting results).
         bg_subtractor = cv2.cuda.createBackgroundSubtractorMOG()
 
         start_time_gpu_video = time.perf_counter()
@@ -121,23 +128,24 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
                 logger.debug("End of video.")
                 break
             gpu_frame.upload(frame, stream=stream)
-            gpu_foreground_mask = bg_subtractor.apply(gpu_frame, learningRate=LEARNING_RATE, stream=stream)
-            cpu_fg_mask = gpu_foreground_mask.download(stream=stream)
+            gpu_foreground_mask: GpuMat = bg_subtractor.apply(gpu_frame, learningRate=LEARNING_RATE, stream=stream)
+            # Download result to simulate real-world usage where CPU needs the output.
+            cpu_fg_mask: NDArray[np.uint8] = gpu_foreground_mask.download(stream=stream)
         # Synchronize stream to ensure all GPU operations complete before measuring time.
         stream.waitForCompletion()
         time_gpu_video = time.perf_counter() - start_time_gpu_video
     finally:
         cap.release()
 
-    logger.debug(f"CPU: Static image for {static_image_iteration} iterations - {time_cpu_image}")
-    logger.debug(f"GPU: Static image for {static_image_iteration} iterations - {time_gpu_image}")
+    logger.info(f"CPU: Static image for {static_image_iteration} iterations - {time_cpu_image}")
+    logger.info(f"GPU: Static image for {static_image_iteration} iterations - {time_gpu_image}")
     logger.info(
         f"OpenCV-CUDA was ~{round(time_cpu_image / time_gpu_image)} times faster i.e "
         f"~{round(((time_cpu_image - time_gpu_image) / time_cpu_image) * 100)}% reduction in time."
     )
 
-    logger.debug(f"CPU: Video - {time_cpu_video}")
-    logger.debug(f"GPU: Video - {time_gpu_video}")
+    logger.info(f"CPU: Video - {time_cpu_video}")
+    logger.info(f"GPU: Video - {time_gpu_video}")
     logger.info(
         f"OpenCV-CUDA was ~{round(time_cpu_video / time_gpu_video)} times faster i.e. "
         f"~{round(((time_cpu_video - time_gpu_video) / time_cpu_video) * 100)}% reduction in time."
