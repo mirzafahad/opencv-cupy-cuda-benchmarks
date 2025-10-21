@@ -40,20 +40,23 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
         logger.error(f"Error opening video file: {video_file}. Aborting...")
         return
 
-    # Initialize the background subtractor again.
-    bg_subtractor = cv2.bgsegm.createBackgroundSubtractorMOG()
+    try:
+        # Initialize the background subtractor again.
+        bg_subtractor = cv2.bgsegm.createBackgroundSubtractorMOG()
 
-    start_time_cpu_video = time.perf_counter()
-    while True:
-        ret, frame = cap.read()
+        start_time_cpu_video = time.perf_counter()
+        while True:
+            ret, frame = cap.read()
 
-        # Check if frame reading was successful.
-        if not ret:
-            logger.debug("End of video.")
-            break
-        bg_subtractor.apply(frame, learningRate=0.1)
+            # Check if frame reading was successful.
+            if not ret:
+                logger.debug("End of video.")
+                break
+            bg_subtractor.apply(frame, learningRate=0.1)
 
-    time_cpu_video = time.perf_counter() - start_time_cpu_video
+        time_cpu_video = time.perf_counter() - start_time_cpu_video
+    finally:
+        cap.release()
 
     #################### GPU ####################
     # First check if OpenCV-CUDA is available.
@@ -82,25 +85,32 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
 
     # Now run the subtractor for the video.
     cap = cv2.VideoCapture(video_file)
-    # Create the background subtraction again.
-    bg_subtractor = cv2.cuda.createBackgroundSubtractorMOG()
+    if not cap.isOpened():
+        logger.error(f"Error opening video file: {video_file}. Aborting...")
+        return
 
-    start_time_gpu_video = time.perf_counter()
-    while True:
-        ret, frame = cap.read()
+    try:
+        # Create the background subtraction again.
+        bg_subtractor = cv2.cuda.createBackgroundSubtractorMOG()
 
-        # Check if frame reading was successful.
-        if not ret:
-            logger.debug("End of video.")
-            break
-        gpu_frame.upload(frame, stream=stream)
-        # Get a mask from the subtraction.
-        gpu_foreground_mask = bg_subtractor.apply(gpu_frame, learningRate=0.1, stream=stream)
-        # Download the result from the GPU to CPU.
-        cpu_fg_mask = gpu_foreground_mask.download(stream=stream)
-    # Wait for all GPU operations to complete before stopping the timer.
-    stream.waitForCompletion()
-    time_gpu_video = time.perf_counter() - start_time_gpu_video
+        start_time_gpu_video = time.perf_counter()
+        while True:
+            ret, frame = cap.read()
+
+            # Check if frame reading was successful.
+            if not ret:
+                logger.debug("End of video.")
+                break
+            gpu_frame.upload(frame, stream=stream)
+            # Get a mask from the subtraction.
+            gpu_foreground_mask = bg_subtractor.apply(gpu_frame, learningRate=0.1, stream=stream)
+            # Download the result from the GPU to CPU.
+            cpu_fg_mask = gpu_foreground_mask.download(stream=stream)
+        # Wait for all GPU operations to complete before stopping the timer.
+        stream.waitForCompletion()
+        time_gpu_video = time.perf_counter() - start_time_gpu_video
+    finally:
+        cap.release()
 
     logger.debug(f"CPU: Static image for {static_image_iteration} iterations - {time_cpu_image}")
     logger.debug(f"GPU: Static image for {static_image_iteration} iterations - {time_gpu_image}")
