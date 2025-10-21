@@ -142,6 +142,14 @@ def normalize_batch_cpu(images: list):
 
 
 if __name__ == "__main__":
-    for _ in range(20):
+    # Warm-up run to initialize CUDA context and compile kernels
+    #dummy_image = np.random.randint(0, 256, size=(720, 1280, 3), dtype=np.uint8)
+    #preprocess(dummy_image)
+    cp.cuda.Device(0).use()  # Initialize CUDA context
+    cp.zeros(1).get()  # Force kernel compilation
+    logger.info("Warm-up complete. Starting actual benchmark...")
+
+    
+    for i in range(20):
         dummy_image = np.random.randint(0, 256, size=(720, 1280, 3), dtype=np.uint8)
         preprocess(dummy_image)
