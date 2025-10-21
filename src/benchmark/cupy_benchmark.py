@@ -8,12 +8,12 @@ from benchmark.utils.logger import Logger
 logger = Logger()
 
 
-def preprocess(image: NDArray) -> list[NDArray]:
+def preprocess(images: list[NDArray]) -> list[NDArray]:
     """
     Preprocess the image for the model.
     """
     processed_images = []
-    for _ in range(6):
+    for image in images:
         resized_image = cv2.resize(
             image,
             (640, 360),
@@ -22,7 +22,6 @@ def preprocess(image: NDArray) -> list[NDArray]:
 
         # Format: ((before_axis0, after_axis0), (before_axis1, after_axis1), ...)
         padding = ((0, 280), (0, 0), (0, 0))
-
         padded_image = np.pad(
             resized_image,
             padding,
@@ -142,14 +141,21 @@ def normalize_batch_cpu(images: list):
 
 
 if __name__ == "__main__":
-    # Warm-up run to initialize CUDA context and compile kernels
-    #dummy_image = np.random.randint(0, 256, size=(720, 1280, 3), dtype=np.uint8)
-    #preprocess(dummy_image)
-    cp.cuda.Device(0).use()  # Initialize CUDA context
-    cp.zeros(1).get()  # Force kernel compilation
+    # Note: First GPU operation initializes the CUDA context and CuPy compiles CUDA kernels on first use.
+    # Due to that, I am running a warm-up iteration before the actual benchmark.
+
+    # Warm-up run to initialize CUDA context and compile kernels.
+    dummy_image = np.random.randint(0, 256, size=(720, 1280, 3), dtype=np.uint8)
+    preprocess([dummy_image * 2])
     logger.info("Warm-up complete. Starting actual benchmark...")
 
-    
-    for i in range(20):
-        dummy_image = np.random.randint(0, 256, size=(720, 1280, 3), dtype=np.uint8)
-        preprocess(dummy_image)
+    all_time = 0
+    for _ in range(20):
+        dummy_images = []
+        for _ in range(6):
+            dummy_images.append(np.random.randint(0, 256, size=(720, 1280, 3), dtype=np.uint8))
+        start_time = time.perf_counter()
+        preprocess(dummy_images)
+        all_time += time.perf_counter() - start_time
+    logger.info(f"Time spent: {all_time // 20 * 1000:.2f}ms")
+
