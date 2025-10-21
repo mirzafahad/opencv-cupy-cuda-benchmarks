@@ -95,6 +95,25 @@ def normalize_using_numpy(images: list):
 
     return results
 
+def validation():
+    # Validate that CPU and GPU produce equivalent results
+    logger.info("Validating CPU vs GPU results...")
+    cpu_results = normalize_using_numpy(dummy_images)
+    gpu_results = normalize_using_cupy(dummy_images, return_gpu_arrays=False)
+
+    # Compare each result
+    all_match = True
+    for i, (cpu_arr, gpu_arr) in enumerate(zip(cpu_results, gpu_results)):
+        if not np.allclose(cpu_arr, gpu_arr, rtol=1e-3, atol=1e-5):
+            logger.info(f"Mismatch at image {i}: max diff = {np.abs(cpu_arr - gpu_arr).max()}")
+            all_match = False
+
+    if all_match:
+        logger.info("✓ Validation passed: CPU and GPU results match")
+    else:
+        raise ValueError("✗ Validation failed: CPU and GPU results differ")
+
+
 
 if __name__ == "__main__":
     # Benchmark configuration
