@@ -25,6 +25,10 @@ logger = Logger()
 # Lower values (0.0-1.0) make the model adapt more slowly to changes.
 LEARNING_RATE = 0.1
 
+# Number of warmup iterations to run before benchmarking GPU operations.
+# GPU kernels are typically slower on the first run due to JIT compilation and initialization.
+GPU_WARMUP_ITERATIONS = 10
+
 
 def run_profiling(image_file: str, video_file: str, static_image_iteration: int) -> None:
     """
@@ -103,6 +107,15 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
         return
 
     logger.info("Running GPU Background Subtraction...")
+
+    # Warmup: Run a few iterations to initialize GPU kernels and eliminate JIT compilation overhead.
+    logger.debug(f"Warming up GPU with {GPU_WARMUP_ITERATIONS} iterations...")
+    for _ in range(GPU_WARMUP_ITERATIONS):
+        gpu_frame.upload(static_image, stream=stream)
+        gpu_foreground_mask: GpuMat = bg_subtractor.apply(gpu_frame, learningRate=LEARNING_RATE, stream=stream)
+        _ = gpu_foreground_mask.download(stream=stream)
+    stream.waitForCompletion()
+
     gpu_image_start_time = time.perf_counter()
     # Benchmark static image processing with GPU.
     # Note: All operations use the same stream for asynchronous execution.
@@ -118,6 +131,16 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
 
     # Create a fresh background model for video test (prevents static image from affecting results).
     bg_subtractor = cv2.cuda.createBackgroundSubtractorMOG()
+
+    # Warmup for video benchmark with fresh background subtractor.
+    logger.debug(f"Warming up GPU for video test with {GPU_WARMUP_ITERATIONS} iterations...")
+    warmup_frames = video_frames[:GPU_WARMUP_ITERATIONS] if len(video_frames) >= GPU_WARMUP_ITERATIONS else video_frames
+    for frame in warmup_frames:
+        gpu_frame.upload(frame, stream=stream)
+        gpu_foreground_mask: GpuMat = bg_subtractor.apply(gpu_frame, learningRate=LEARNING_RATE, stream=stream)
+        _ = gpu_foreground_mask.download(stream=stream)
+    stream.waitForCompletion()
+
     gpu_video_start_time = time.perf_counter()
     for frame in video_frames:
         gpu_frame.upload(frame, stream=stream)
