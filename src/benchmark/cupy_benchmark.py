@@ -5,7 +5,6 @@ This module compares CPU (NumPy) and GPU (CuPy) performance for batch
 image normalization operations commonly used in deep learning preprocessing.
 """
 
-
 import time
 
 import cupy as cp
@@ -19,20 +18,23 @@ logger = Logger()
 
 
 # Normalization parameters (ImageNet stats)
-MEAN = [123.675, 116.28, 103.53]
-STD = [58.395, 57.12, 57.375]
+MEAN = [123.675, 116.28, 103.53]  # RGB channel means
+STD = [58.395, 57.12, 57.375]  # RGB channel standard deviations
+# Pre-computed arrays for performance (avoid recreating on each function call)
 MEAN_GPU = cp.array(MEAN, dtype=cp.float32)
 STD_GPU = cp.array(STD, dtype=cp.float32)
 MEAN_CPU = np.array(MEAN, dtype=np.float32)
 STD_CPU = np.array(STD, dtype=np.float32)
 
 
-def normalize_using_cupy(images: list[NDArray], return_gpu_arrays: bool = False) -> list[NDArray] | list[cp.ndarray]:
+def normalize_using_cupy(
+    images: list[NDArray], return_gpu_arrays: bool = False
+) -> list[NDArray] | list[cp.ndarray]:
     """
     GPU normalization using CuPy.
 
     Args:
-        images: Images to normalize.
+        images: List of RGB images to normalize.
         return_gpu_arrays: If True, keep the end result on GPU array. If False, download to CPU memory.
 
     Returns:
@@ -44,15 +46,17 @@ def normalize_using_cupy(images: list[NDArray], return_gpu_arrays: bool = False)
     # Upload to GPU.
     images_batch_gpu = cp.asarray(images_batch)
 
-    # Normalize all images in parallel.
+    # Normalize all images in parallel: (pixel - mean) / std
     normalized_batch_gpu = (images_batch_gpu - MEAN_GPU) / STD_GPU
 
     # Batch transpose: (N, H, W, C) -> (N, C, H, W)
+    # PyTorch/deep learning frameworks expect channels-first format.
     transposed_batch_gpu = cp.transpose(normalized_batch_gpu, (0, 3, 1, 2))
 
     if return_gpu_arrays:
         # Keep on GPU - no download overhead!
         # Extract each image and add batch dimension: (C, H, W) -> (1, C, H, W)
+        # Downstream inference models expect individual images with batch dimension.
         results_gpu = [
             cp.expand_dims(transposed_batch_gpu[i], axis=0)  # (1, 3, 640, 640) per image
             for i in range(len(images))
@@ -99,7 +103,7 @@ def normalize_using_numpy(images: list[NDArray]) -> list[NDArray]:
     return results
 
 
-def validate_cpu_and_gpu_results(images: list[NDArray]):
+def validate_cpu_and_gpu_results(images: list[NDArray]) -> None:
     """
     Validate that CPU and GPU normalization produce equivalent results.
 
@@ -133,11 +137,15 @@ def validate_cpu_and_gpu_results(images: list[NDArray]):
 
 if __name__ == "__main__":
     # Benchmark configuration
+    # Our setup has six cameras.
     NUM_IMAGES = 6
     # Let's assume our inference model takes 640-by-640 RGB images.
     IMAGE_SIZE = (640, 640, 3)
+    # Number of iterations for averaging timing results.
     NUM_ITERATIONS = 20
 
+    # Generate random dummy images for benchmarking.
+    # Using uint8 [0, 255] to simulate real image data.
     dummy_images = []
     for _ in range(NUM_IMAGES):
         dummy_images.append(np.random.randint(0, 256, size=IMAGE_SIZE, dtype=np.uint8))
@@ -145,8 +153,9 @@ if __name__ == "__main__":
     logger.info(f"GPU Device: {cp.cuda.Device().name}")
     logger.info(f"CUDA Version: {cp.cuda.runtime.runtimeGetVersion()}")
 
-    # Note: First GPU operation initializes the CUDA context and CuPy compiles CUDA kernels on first use.
-    # Due to that, I am running a warm-up iteration before the actual benchmark.
+    # Warm-up: First GPU operation initializes CUDA context and compiles kernels.
+    # This can take 100-500ms and would skew benchmark results if not done separately.
+    # Running multiple iterations ensures all kernels are fully compiled and cached.
     logger.info("Warming CUDA...")
     for _ in range(3):
         normalize_using_cupy(dummy_images)
@@ -161,6 +170,7 @@ if __name__ == "__main__":
     logger.info(f"  Image size: {IMAGE_SIZE}")
     logger.info(f"  Iterations: {NUM_ITERATIONS}")
 
+    # ===== Baseline: CPU-only benchmark =====
     # CPU Operation.
     cpu_time_start = time.perf_counter()
     for _ in range(NUM_ITERATIONS):
@@ -168,19 +178,28 @@ if __name__ == "__main__":
     cpu_time = time.perf_counter() - cpu_time_start
     logger.info(f"CPU Normalize | Takes {cpu_time / NUM_ITERATIONS * 1000:.2f}ms")
 
-    # GPU operation
-    # Download the end result to CPU.
+    # ===== GPU benchmark with CPU memory output =====
+    # Use case: GPU preprocessing followed by CPU-based inference
+    # Measures GPU computation + GPU->CPU transfer overhead
     gpu_cpu_time_start = time.perf_counter()
     for _ in range(NUM_ITERATIONS):
         normalize_using_cupy(dummy_images, return_gpu_arrays=False)
-    cp.cuda.Stream.null.synchronize()  # Wait for GPU operations to complete.
+    # Block CPU until all GPU operations complete (needed for accurate timing)
+    cp.cuda.Stream.null.synchronize()
     gpu_cpu_time = time.perf_counter() - gpu_cpu_time_start
-    logger.info(f"GPU Normalize + Result in CPU memory | Takes {gpu_cpu_time / NUM_ITERATIONS * 1000:.2f}ms")
+    logger.info(
+        f"GPU Normalize + Result in CPU memory | Takes {gpu_cpu_time / NUM_ITERATIONS * 1000:.2f}ms"
+    )
 
-    # Keep the end result in GPU.
+    # ===== GPU benchmark with GPU memory output =====
+    # Use case: GPU preprocessing followed by GPU-based inference (e.g., TensorRT)
+    # Avoids CPU transfer overhead - fastest option for GPU inference pipelines
     gpu_gpu_time_start = time.perf_counter()
     for _ in range(NUM_ITERATIONS):
         normalize_using_cupy(dummy_images, return_gpu_arrays=True)
-    cp.cuda.Stream.null.synchronize()  # Wait for GPU operations to complete.
+    # Block CPU until all GPU operations complete (needed for accurate timing).
+    cp.cuda.Stream.null.synchronize()
     gpu_gpu_time = time.perf_counter() - gpu_gpu_time_start
-    logger.info(f"GPU Normalize + Result in GPU Array | Takes {gpu_gpu_time / NUM_ITERATIONS * 1000:.2f}ms")
+    logger.info(
+        f"GPU Normalize + Result in GPU Array | Takes {gpu_gpu_time / NUM_ITERATIONS * 1000:.2f}ms"
+    )
