@@ -1,3 +1,11 @@
+"""
+Background Subtraction Benchmark Module.
+
+This module benchmarks CPU vs GPU performance for background subtraction using OpenCV's
+MOG (Mixture of Gaussians) algorithm. It compares standard OpenCV (CPU) implementation
+against OpenCV CUDA (GPU) implementation on both static images and video files.
+"""
+
 import time
 from typing import TYPE_CHECKING
 
@@ -11,10 +19,29 @@ if TYPE_CHECKING:
 
 logger = Logger()
 
+# Learning rate for background subtraction model updates.
+# Lower values (0.0-1.0) make the model adapt more slowly to changes.
+LEARNING_RATE = 0.1
+
 
 def run_profiling(image_file: str, video_file: str, static_image_iteration: int) -> None:
     """
     Profiling CPU and GPU based background subtraction.
+
+    Benchmarks background subtraction performance using both CPU (OpenCV) and GPU (CUDA)
+    implementations. Tests are performed on both a static image (repeated iterations) and
+    a video file. Results are logged showing timing comparisons and speedup metrics.
+
+    Args:
+        image_file: Path to the static image file for testing.
+        video_file: Path to the video file for testing.
+        static_image_iteration: Number of iterations to run on the static image.
+
+    Returns:
+        None. Results are logged to the console via the logger.
+
+    Raises:
+        Early return if image/video files cannot be opened or CUDA is not available.
     """
     # Load a static image. Will use it for both CPU and GPU based background subtraction.
     image = cv2.imread(image_file)
@@ -24,42 +51,37 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
 
     #################### CPU ####################
     logger.info("Running CPU Background Subtraction...")
-    # Initialize the cpu based background subtractor.
     bg_subtractor = cv2.bgsegm.createBackgroundSubtractorMOG()
 
-    # Now run the subtractor using the same image for multi iterations.
+    # Benchmark static image processing.
     start_time_cpu_image = time.perf_counter()
     for _ in range(static_image_iteration):
-        bg_subtractor.apply(image, learningRate=0.1)
+        bg_subtractor.apply(image, learningRate=LEARNING_RATE)
 
     time_cpu_image = time.perf_counter() - start_time_cpu_image
 
-    # Read frames from a video file.
     cap = cv2.VideoCapture(video_file)
     if not cap.isOpened():
         logger.error(f"Error opening video file: {video_file}. Aborting...")
         return
 
     try:
-        # Initialize the background subtractor again.
+        # Create fresh background model for video test (prevents static image from affecting results).
         bg_subtractor = cv2.bgsegm.createBackgroundSubtractorMOG()
 
         start_time_cpu_video = time.perf_counter()
         while True:
             ret, frame = cap.read()
-
-            # Check if frame reading was successful.
             if not ret:
                 logger.debug("End of video.")
                 break
-            bg_subtractor.apply(frame, learningRate=0.1)
+            bg_subtractor.apply(frame, learningRate=LEARNING_RATE)
 
         time_cpu_video = time.perf_counter() - start_time_cpu_video
     finally:
         cap.release()
 
     #################### GPU ####################
-    # First check if OpenCV-CUDA is available.
     if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
         bg_subtractor = cv2.cuda.createBackgroundSubtractorMOG()
         stream: Stream = cv2.cuda.Stream()
@@ -71,42 +93,37 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
 
     logger.info("Running GPU Background Subtraction...")
     start_time_gpu_image = time.perf_counter()
-    # Now run the subtractor for 100 times.
+    # Benchmark static image processing with GPU.
+    # Note: All operations use the same stream for asynchronous execution.
     for _ in range(static_image_iteration):
-        # Upload to GPU.
         gpu_frame.upload(image, stream=stream)
-        # Get a mask from the subtraction.
-        gpu_foreground_mask = bg_subtractor.apply(gpu_frame, learningRate=0.1, stream=stream)
-        # Download the result from the GPU to CPU.
+        gpu_foreground_mask = bg_subtractor.apply(gpu_frame, learningRate=LEARNING_RATE, stream=stream)
+        # Download result to simulate real-world usage where CPU needs the output.
         cpu_fg_mask = gpu_foreground_mask.download(stream=stream)
-    # Wait for all GPU operations to complete before stopping the timer.
+    # Synchronize stream to ensure all GPU operations complete before measuring time.
+    # Without this, timing would only measure kernel launch overhead, not actual execution.
     stream.waitForCompletion()
     time_gpu_image = time.perf_counter() - start_time_gpu_image
 
-    # Now run the subtractor for the video.
     cap = cv2.VideoCapture(video_file)
     if not cap.isOpened():
         logger.error(f"Error opening video file: {video_file}. Aborting...")
         return
 
     try:
-        # Create the background subtraction again.
+        # Create fresh background model for video test (prevents static image from affecting results).
         bg_subtractor = cv2.cuda.createBackgroundSubtractorMOG()
 
         start_time_gpu_video = time.perf_counter()
         while True:
             ret, frame = cap.read()
-
-            # Check if frame reading was successful.
             if not ret:
                 logger.debug("End of video.")
                 break
             gpu_frame.upload(frame, stream=stream)
-            # Get a mask from the subtraction.
-            gpu_foreground_mask = bg_subtractor.apply(gpu_frame, learningRate=0.1, stream=stream)
-            # Download the result from the GPU to CPU.
+            gpu_foreground_mask = bg_subtractor.apply(gpu_frame, learningRate=LEARNING_RATE, stream=stream)
             cpu_fg_mask = gpu_foreground_mask.download(stream=stream)
-        # Wait for all GPU operations to complete before stopping the timer.
+        # Synchronize stream to ensure all GPU operations complete before measuring time.
         stream.waitForCompletion()
         time_gpu_video = time.perf_counter() - start_time_gpu_video
     finally:
