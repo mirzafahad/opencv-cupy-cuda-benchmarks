@@ -27,7 +27,7 @@ LEARNING_RATE = 0.1
 
 # Number of warmup iterations to run before benchmarking GPU operations.
 # GPU kernels are typically slower on the first run due to JIT compilation and initialization.
-GPU_WARMUP_ITERATIONS = 10
+GPU_WARMUP_ITERATIONS = 50
 
 
 def run_profiling(image_file: str, video_file: str, static_image_iteration: int) -> None:
@@ -134,9 +134,9 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
 
     # Warmup for video benchmark with fresh background subtractor.
     logger.debug(f"Warming up GPU for video test with {GPU_WARMUP_ITERATIONS} iterations...")
-    warmup_frames = video_frames[:GPU_WARMUP_ITERATIONS] if len(video_frames) >= GPU_WARMUP_ITERATIONS else video_frames
-    for frame in warmup_frames:
-        gpu_frame.upload(frame, stream=stream)
+    warmup_frame = video_frames[0]
+    for _ in range(GPU_WARMUP_ITERATIONS):
+        gpu_frame.upload(warmup_frame, stream=stream)
         gpu_foreground_mask: GpuMat = bg_subtractor.apply(gpu_frame, learningRate=LEARNING_RATE, stream=stream)
         _ = gpu_foreground_mask.download(stream=stream)
     stream.waitForCompletion()
@@ -154,15 +154,15 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
     # Explicitly release GPU resources
     gpu_frame.release()
 
-    logger.info(f"CPU: Static image for {static_image_iteration} iterations - {cpu_image_time}")
-    logger.info(f"GPU: Static image for {static_image_iteration} iterations - {time_gpu_image}")
+    logger.info(f"CPU: Static Background - {cpu_image_time}")
+    logger.info(f"GPU: Static Background - {time_gpu_image}")
     logger.info(
         f"OpenCV-CUDA was ~{round(cpu_image_time / time_gpu_image)} times faster i.e "
         f"~{round(((cpu_image_time - time_gpu_image) / cpu_image_time) * 100)}% reduction in time."
     )
 
-    logger.info(f"CPU: Video - {cpu_video_time}")
-    logger.info(f"GPU: Video - {gpu_video_time}")
+    logger.info(f"CPU: Background with Motion - {cpu_video_time}")
+    logger.info(f"GPU: Background with Motion - {gpu_video_time}")
     logger.info(
         f"OpenCV-CUDA was ~{round(cpu_video_time / gpu_video_time)} times faster i.e. "
         f"~{round(((cpu_video_time - gpu_video_time) / cpu_video_time) * 100)}% reduction in time."
