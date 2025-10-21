@@ -103,30 +103,30 @@ def run_profiling(image_file: str, video_file: str, static_image_iteration: int)
         return
 
     logger.info("Running GPU Background Subtraction...")
-    start_time_gpu_image = time.perf_counter()
+    gpu_image_start_time = time.perf_counter()
     # Benchmark static image processing with GPU.
     # Note: All operations use the same stream for asynchronous execution.
     for _ in range(static_image_iteration):
         gpu_frame.upload(static_image, stream=stream)
         gpu_foreground_mask: GpuMat = bg_subtractor.apply(gpu_frame, learningRate=LEARNING_RATE, stream=stream)
         # Download result to simulate real-world usage where CPU needs the output.
-        cpu_fg_mask: NDArray[np.uint8] = gpu_foreground_mask.download(stream=stream)
+        _ = gpu_foreground_mask.download(stream=stream)
     # Synchronize stream to ensure all GPU operations complete before measuring time.
     # Without this, timing would only measure kernel launch overhead, not actual execution.
     stream.waitForCompletion()
-    time_gpu_image = time.perf_counter() - start_time_gpu_image
+    time_gpu_image = time.perf_counter() - gpu_image_start_time
 
     # Create a fresh background model for video test (prevents static image from affecting results).
     bg_subtractor = cv2.cuda.createBackgroundSubtractorMOG()
-    gpu_video_time_start = time.perf_counter()
+    gpu_video_start_time = time.perf_counter()
     for frame in video_frames:
         gpu_frame.upload(frame, stream=stream)
         gpu_foreground_mask: GpuMat = bg_subtractor.apply(gpu_frame, learningRate=LEARNING_RATE, stream=stream)
         # Download result to simulate real-world usage where CPU needs the output.
-        cpu_fg_mask: NDArray[np.uint8] = gpu_foreground_mask.download(stream=stream)
+        _ = gpu_foreground_mask.download(stream=stream)
     # Synchronize stream to ensure all GPU operations complete before measuring time.
     stream.waitForCompletion()
-    gpu_video_time = time.perf_counter() - gpu_video_time_start
+    gpu_video_time = time.perf_counter() - gpu_video_start_time
 
     # Explicitly release GPU resources
     gpu_frame.release()
