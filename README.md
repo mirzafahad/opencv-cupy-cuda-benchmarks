@@ -1,5 +1,7 @@
-![Computer](resource/cover.jpg)
-
+<div style="text-align: center;">
+  <img src="resource/cover.jpg" alt="cover" style="display: block; margin: 0 auto;">
+</div>
+---
 # GPU vs CPU Benchmarking using OpenCV CUDA and CuPy
 
 The repo provides example of gpu vs cpu benchmarking by utilizing OpenCV-CUDA and CuPy. [This blog](https://mirzafahad.github.io/2025-10-16-unlock-gpu-power/) explains the background and the results.
