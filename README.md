@@ -1,7 +1,8 @@
 <p align="center">
   <img src="resource/cover.jpg">
 </p>
----
+
+___
 
 # GPU vs CPU Benchmarking using OpenCV CUDA and CuPy
 
