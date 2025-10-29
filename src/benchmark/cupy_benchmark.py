@@ -137,7 +137,7 @@ def validate_cpu_and_gpu_results(images: list[NDArray]) -> None:
 
 if __name__ == "__main__":
     # Benchmark configuration
-    # Our setup has six cameras.
+    # How many frame we batch for the operation.
     NUM_IMAGES = 6
     # Let's assume our inference model takes 640-by-640 RGB images.
     IMAGE_SIZE = (640, 640, 3)

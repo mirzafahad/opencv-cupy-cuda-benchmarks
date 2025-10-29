@@ -10,13 +10,11 @@ import time
 from typing import TYPE_CHECKING
 
 import cv2
-import numpy as np
 
 from benchmark.utils.logger import Logger
 
 if TYPE_CHECKING:
     from cv2.cuda import GpuMat, Stream
-    from numpy.typing import NDArray
 
 
 logger = Logger()
