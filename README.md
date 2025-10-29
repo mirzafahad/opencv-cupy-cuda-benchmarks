@@ -1,6 +1,6 @@
-<div style="text-align: center;">
-  <img src="resource/cover.jpg" alt="cover" style="display: block; margin: 0 auto;">
-</div>
+<p align="center">
+  <img src="resource/cover.jpg">
+</p>
 ---
 
 # GPU vs CPU Benchmarking using OpenCV CUDA and CuPy
